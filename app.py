@@ -14,6 +14,9 @@ import db
 app = Flask(__name__, static_folder='.')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Ensure database tables and initial seed data exist
+db.init_db()
+
 # Enable CORS on all responses so frontend works both directly and from localhost dev servers
 @app.after_request
 def add_cors_headers(response):
@@ -477,6 +480,6 @@ def reset_db_api():
 
 
 if __name__ == '__main__':
-    db.init_db()
-    print("Ward Ledger SQLite Backend running on http://127.0.0.1:5000")
-    app.run(host='127.0.0.1', port=5000, debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Ward Ledger SQLite Backend running on http://0.0.0.0:{port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
