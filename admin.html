@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ward Ledger — Admin Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="seal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="1.6"><path d="M12 2 3 7v2h18V7z"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8"/><path d="M3 21h18"/></svg>
+    </div>
+    <div>
+      <h1><a href="index.html" style="color:inherit; text-decoration:none;">Ward Ledger</a></h1>
+      <div class="tagline" id="brand-tagline">Participatory municipal budgeting</div>
+    </div>
+  </div>
+  <div class="top-controls">
+    <div id="header-lang"></div>
+    <div class="mode-switch" role="tablist" aria-label="Switch view">
+      <button type="button" id="mode-res-btn" onclick="switchMode('resident.html')">Resident</button>
+      <button type="button" id="mode-adm-btn" class="active">Admin</button>
+    </div>
+  </div>
+  <div class="session-chip" id="session-chip"></div>
+</header>
+
+<div class="sync-note" id="sync-note"></div>
+
+<main id="app" class="view-container"></main>
+
+<footer>
+  Vote records are chained with SHA-256 hashes in SQLite (ward_ledger.db).
+  <span style="margin-left:12px;"><button onclick="handleResetDb()" style="background:none; border:none; color:var(--text-faint); font-size:0.72rem; cursor:pointer; text-decoration:underline;" id="reset-db-label">Reset DB to clean seed</button></span>
+</footer>
+
+<script src="shared.js"></script>
+<script>
+let adminSession = null; // {adminId, name, role}
+try {
+  const saved = sessionStorage.getItem('adminSession');
+  if(saved) adminSession = JSON.parse(saved);
+} catch(e){}
+
+let currentFeedTab = 'proposal';
+
+function switchMode(url){
+  if(url.includes('resident')){
+    document.getElementById('mode-res-btn')?.classList.add('active');
+    document.getElementById('mode-adm-btn')?.classList.remove('active');
+  } else {
+    document.getElementById('mode-adm-btn')?.classList.add('active');
+    document.getElementById('mode-res-btn')?.classList.remove('active');
+  }
+  const app = document.getElementById('app');
+  if(app){
+    app.classList.remove('view-container');
+    app.classList.add('view-fade-out');
+  }
+  setTimeout(() => { window.location.href = url; }, 140);
+}
+
+function renderSessionChip(){
+  const el = document.getElementById('session-chip');
+  if(!el) return;
+  el.innerHTML = adminSession
+    ? `<span class="dot"></span> ${adminSession.name} · ${adminSession.role} <button onclick="adminLogout()">${t('sign_out')}</button>`
+    : '';
+}
+function adminLogout(){
+  adminSession = null;
+  try { sessionStorage.removeItem('adminSession'); } catch(e){}
+  render();
+}
+
+/* ---- login ---- */
+function renderAdminLogin(){
+  return `
+  <div class="login-wrap">
+    <div class="login-card">
+      <h2>${t('admin_login_title')}</h2>
+      <p class="sub">${t('admin_login_sub')}</p>
+      <label for="in-adm">${t('staff_id_label')}</label>
+      <input type="text" id="in-adm" placeholder="e.g. MC-ADM-001" onkeydown="if(event.key==='Enter')adminLogin()">
+      <button class="btn-primary" onclick="adminLogin()">${t('verify_enter')}</button>
+      <div id="admin-login-error"></div>
+      <div class="login-note">${t('admin_login_note')}</div>
+    </div>
+  </div>`;
+}
+
+async function adminLogin(){
+  const adminId = document.getElementById('in-adm').value.trim().toUpperCase();
+  const errEl = document.getElementById('admin-login-error');
+
+  if(isDbConnected){
+    try{
+      const res = await fetch(`${API_URL}/api/auth/admin`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({adminId})
+      });
+      const data = await res.json();
+      if(res.ok && data.ok){
+        adminSession = data.admin;
+        try { sessionStorage.setItem('adminSession', JSON.stringify(adminSession)); } catch(e){}
+        await render();
+        return;
+      }
+    }catch(e){}
+  }
+
+  const record = ADMIN_ROLL[adminId];
+  if(!record){
+    errEl.innerHTML = `<div class="login-note" style="color:var(--danger); margin-top:-8px;">Staff ID not found on the municipal roll. Check the ID and try again.</div>`;
+    return;
+  }
+  adminSession = {adminId, name:record.name, role:record.role};
+  try { sessionStorage.setItem('adminSession', JSON.stringify(adminSession)); } catch(e){}
+  await render();
+}
+
+/* ---- console ---- */
+function renderProposalTableRows(){
+  return proposals.map(p=>`
+    <tr>
+      <td><b>${p.name}</b><div style="color:var(--text-faint); font-size:0.74rem; margin-top:2px;">${p.desc}</div></td>
+      <td><span class="tag">${shortWard(p.ward)}</span></td>
+      <td class="mono">${inr(p.budget)}</td>
+      <td class="mono">${votesFor(p.id)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="color:var(--text-faint)">No proposals posted yet.</td></tr>';
+}
+
+function renderVoterTableRows(){
+  const voterEntries = Object.entries(VOTER_ROLL);
+  return voterEntries.slice(-15).reverse().map(([vid, v]) => `
+    <tr>
+      <td class="mono"><b>${vid}</b></td>
+      <td>${v.name}</td>
+      <td><span class="tag">${shortWard(v.ward)}</span></td>
+      <td>${votedVoters.has(vid) ? `<span style="color:var(--teal)">${t('voted')}</span>` : `<span style="color:var(--text-faint)">${t('pending')}</span>`}</td>
+    </tr>`).join('') || `<tr><td colspan="4" style="color:var(--text-faint)">${t('no_voters_reg')}</td></tr>`;
+}
+
+function renderGrievanceCardsAdmin(){
+  if(!grievances || grievances.length === 0){
+    return `<div style="font-size:0.8rem; color:var(--text-faint); padding:12px;">No grievances or suggestions submitted yet.</div>`;
+  }
+
+  return grievances.map(g => {
+    let statusClass = 'pending';
+    let statusLabel = t('status_pending');
+    if(g.status === 'Under Review'){ statusClass = 'review'; statusLabel = t('status_review'); }
+    else if(g.status === 'Resolved'){ statusClass = 'resolved'; statusLabel = t('status_resolved'); }
+
+    let icon = '💡';
+    if(g.type === 'complaint') icon = '⚠️';
+    else if(g.type === 'budget_idea') icon = '🏗️';
+
+    return `
+    <div class="grievance-item">
+      <div class="top-line">
+        <span style="font-weight:600; font-size:0.85rem; color:var(--text);">${icon} ${g.subject}</span>
+        <span class="badge-status ${statusClass}">${statusLabel}</span>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin:0 0 8px;">${g.details}</p>
+      <div style="font-size:0.72rem; color:var(--text-faint); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <span>${t('tracking_token')}: <b>${g.id}</b> · ${g.name || 'Resident'} (${shortWard(g.ward)})</span>
+        <div style="display:flex; gap:6px;">
+          ${g.status !== 'Under Review' ? `<button type="button" class="toggle-btn" onclick="handleGrievanceStatus('${g.id}', 'Under Review')">${t('mark_review')}</button>` : ''}
+          ${g.status !== 'Resolved' ? `<button type="button" class="toggle-btn" style="color:var(--teal);" onclick="handleGrievanceStatus('${g.id}', 'Resolved')">${t('mark_resolved')}</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderAdminConsole(){
+  const wardOptions = WARDS.map(w=>`<option value="${w}">${w}</option>`).join('');
+  const voterCount = Object.keys(VOTER_ROLL).length;
+
+  return `
+  <section class="col-title">
+    <h2>${t('admin_console')}</h2>
+    <span class="meta">${isDbConnected ? 'Connected to SQLite Database (ward_ledger.db)' : 'Client Storage Mode (GitHub Pages / Standalone)'}</span>
+  </section>
+
+  <!-- Live Database Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat-box">
+      <div class="num" id="stat-voters-count">${voterCount}</div>
+      <div class="lbl">${t('reg_voters')}</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" id="stat-proposals-count">${proposals.length}</div>
+      <div class="lbl">${t('act_proposals')}</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" id="stat-wards-count">${WARDS.length}</div>
+      <div class="lbl">${t('wards_title')}</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" id="stat-votes-count">${voteLog.length}</div>
+      <div class="lbl">${t('votes_recorded')}</div>
+    </div>
+  </div>
+
+  <div class="admin-grid">
+    <!-- Left Column: Feeding Data to Database -->
+    <div class="panel">
+      <h3 style="font-size:0.95rem; margin-bottom:12px; color:var(--text); font-family:'IBM Plex Sans'; font-weight:600;">${t('feed_data')}</h3>
+      
+      <div class="feed-tabs">
+        <button class="feed-tab-btn ${currentFeedTab==='proposal'?'active':''}" data-tab="proposal" onclick="switchFeedTab('proposal')">${t('tab_proposal')}</button>
+        <button class="feed-tab-btn ${currentFeedTab==='voter'?'active':''}" data-tab="voter" onclick="switchFeedTab('voter')">${t('tab_voter')}</button>
+        <button class="feed-tab-btn ${currentFeedTab==='bulk'?'active':''}" data-tab="bulk" onclick="switchFeedTab('bulk')">${t('tab_bulk')}</button>
+        <button class="feed-tab-btn ${currentFeedTab==='ward'?'active':''}" data-tab="ward" onclick="switchFeedTab('ward')">${t('tab_ward')}</button>
+        <button class="feed-tab-btn ${currentFeedTab==='grievances'?'active':''}" data-tab="grievances" onclick="switchFeedTab('grievances')">${t('tab_grievances')}</button>
+      </div>
+
+      <!-- Tab 1: Feed Proposal -->
+      <div id="tab-proposal" class="feed-section ${currentFeedTab==='proposal'?'active':''}">
+        <label for="ad-name">${t('project_name')}</label>
+        <input type="text" id="ad-name" placeholder="e.g. Community Library Roof Repair">
+        <label for="ad-desc">${t('description')}</label>
+        <textarea id="ad-desc" placeholder="What the project covers and why it matters"></textarea>
+        <div class="row2">
+          <div>
+            <label for="ad-budget">${t('budget_inr')}</label>
+            <input type="text" id="ad-budget" placeholder="e.g. 900000">
+          </div>
+          <div>
+            <label for="ad-ward">${t('registered_ward')}</label>
+            <select id="ad-ward">${wardOptions}</select>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="handleAddProposal()">${t('save_proposal')}</button>
+        <div id="proposal-msg"></div>
+      </div>
+
+      <!-- Tab 2: Feed Single Voter -->
+      <div id="tab-voter" class="feed-section ${currentFeedTab==='voter'?'active':''}">
+        <label for="v-id">${t('voter_id_label')}</label>
+        <input type="text" id="v-id" placeholder="e.g. TN-0551001">
+        <label for="v-name">${t('resident_name')}</label>
+        <input type="text" id="v-name" placeholder="e.g. Aakash Sundaram">
+        <label for="v-ward">${t('registered_ward')}</label>
+        <select id="v-ward">${wardOptions}</select>
+        <button class="btn-primary" onclick="handleAddVoter()">${t('register_voter')}</button>
+        <div id="voter-msg"></div>
+      </div>
+
+      <!-- Tab 3: Bulk Feed via CSV / Excel -->
+      <div id="tab-bulk" class="feed-section ${currentFeedTab==='bulk'?'active':''}">
+        <label>${t('feed_target')}</label>
+        <select id="bulk-type">
+          <option value="voters">Voters Roll (voter_id, name, ward)</option>
+          <option value="proposals">Proposals (ward, name, desc, budget)</option>
+        </select>
+
+        <label for="bulk-file">${t('upload_file_lbl')}</label>
+        <input type="file" id="bulk-file" accept=".csv,.xlsx,.xls" style="margin-bottom:12px; font-size:0.8rem; color:var(--text-dim);">
+
+        <label for="bulk-text">${t('paste_csv_lbl')}</label>
+        <textarea id="bulk-text" placeholder="voter_id,name,ward&#10;TN-0551005,Karthik Natarajan,Ward 1 — Anna Nagar" style="height:90px; font-family:'IBM Plex Mono',monospace; font-size:0.75rem;"></textarea>
+
+        <button class="btn-primary" onclick="handleBulkFeed()">${t('upload_feed')}</button>
+        <div id="bulk-msg"></div>
+      </div>
+
+      <!-- Tab 4: Add Ward -->
+      <div id="tab-ward" class="feed-section ${currentFeedTab==='ward'?'active':''}">
+        <label for="w-name">${t('new_ward_name')}</label>
+        <input type="text" id="w-name" placeholder="e.g. Ward 5 — Velachery">
+        <button class="btn-primary" onclick="handleAddWard()">${t('add_ward')}</button>
+        <div id="ward-msg"></div>
+      </div>
+
+      <!-- Tab 5: Grievances & Suggestions Management -->
+      <div id="tab-grievances" class="feed-section ${currentFeedTab==='grievances'?'active':''}">
+        <p style="font-size:0.84rem; color:var(--text-dim); margin-bottom:12px;">Citizen complaints and budget suggestions received across wards:</p>
+        <div id="admin-grievances-list" style="max-height:360px; overflow-y:auto;">
+          ${renderGrievanceCardsAdmin()}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Proposals & Results -->
+    <div>
+      <div class="panel">
+        <h3 style="font-size:0.95rem; margin-bottom:14px; color:var(--text-dim); font-family:'IBM Plex Sans'; font-weight:600;">${t('active_props_table')}</h3>
+        <table class="prop-table">
+          <thead><tr><th>${t('proposal_th')}</th><th>${t('tab_ward')}</th><th>${t('budget_inr')}</th><th>Votes</th></tr></thead>
+          <tbody id="proposals-table-body">${renderProposalTableRows()}</tbody>
+        </table>
+      </div>
+
+      <div class="panel" style="margin-top:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="font-size:0.95rem; color:var(--text-dim); font-family:'IBM Plex Sans'; font-weight:600;">${t('registered_electoral_roll')}</h3>
+          <span class="tag" id="voter-count-tag">${voterCount} ${t('voters_in_roll')}</span>
+        </div>
+        <div style="max-height:220px; overflow-y:auto;">
+          <table class="prop-table" style="font-size:0.78rem;">
+            <thead><tr><th>${t('voter_id_label')}</th><th>Name</th><th>${t('tab_ward')}</th><th>${t('status_th')}</th></tr></thead>
+            <tbody id="voter-table-body">${renderVoterTableRows()}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <section class="col-title" style="margin-top:24px;">
+        <h2 style="font-size:1.05rem;">${t('results_by_ward')}</h2>
+      </section>
+      <div id="admin-ward-results">
+        ${WARDS.map(w=>`
+          <div class="panel" style="margin-bottom:18px;">
+            <div style="font-weight:600; margin-bottom:14px; font-family:'IBM Plex Sans'; font-size:0.9rem;">${w}</div>
+            ${renderResultsForWard(w)}
+          </div>`).join('')}
+      </div>
+
+      <div id="admin-ledger"></div>
+    </div>
+  </div>`;
+}
+
+function switchFeedTab(tab){
+  currentFeedTab = tab;
+  document.querySelectorAll('.feed-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+  });
+  document.querySelectorAll('.feed-section').forEach(sec => {
+    sec.classList.toggle('active', sec.id === `tab-${tab}`);
+  });
+}
+
+function updateLiveStatsAndTables(){
+  const voterCount = Object.keys(VOTER_ROLL).length;
+  const statVoters = document.getElementById('stat-voters-count');
+  const statProps = document.getElementById('stat-proposals-count');
+  const statWards = document.getElementById('stat-wards-count');
+  const statVotes = document.getElementById('stat-votes-count');
+  const tagVoters = document.getElementById('voter-count-tag');
+  const tbVoters = document.getElementById('voter-table-body');
+  const tbProps = document.getElementById('proposals-table-body');
+  const grvList = document.getElementById('admin-grievances-list');
+  const wardResults = document.getElementById('admin-ward-results');
+
+  if(statVoters) statVoters.textContent = voterCount;
+  if(statProps) statProps.textContent = proposals.length;
+  if(statWards) statWards.textContent = WARDS.length;
+  if(statVotes) statVotes.textContent = voteLog.length;
+  if(tagVoters) tagVoters.textContent = `${voterCount} ${t('voters_in_roll')}`;
+  if(tbVoters) tbVoters.innerHTML = renderVoterTableRows();
+  if(tbProps) tbProps.innerHTML = renderProposalTableRows();
+  if(grvList) grvList.innerHTML = renderGrievanceCardsAdmin();
+  if(wardResults){
+    wardResults.innerHTML = WARDS.map(w=>`
+      <div class="panel" style="margin-bottom:18px;">
+        <div style="font-weight:600; margin-bottom:14px; font-family:'IBM Plex Sans'; font-size:0.9rem;">${w}</div>
+        ${renderResultsForWard(w)}
+      </div>`).join('');
+  }
+}
+
+async function handleAddProposal(){
+  const name = document.getElementById('ad-name').value.trim();
+  const desc = document.getElementById('ad-desc').value.trim();
+  const budget = parseInt(document.getElementById('ad-budget').value.replace(/[^0-9]/g,''), 10);
+  const ward = document.getElementById('ad-ward').value;
+  const msgEl = document.getElementById('proposal-msg');
+
+  if(!name || !desc || !budget){
+    msgEl.innerHTML = `<div class="badge-msg error">Please enter project name, description, and budget.</div>`;
+    return;
+  }
+  const res = await addProposal(name, desc, budget, ward);
+  if(res.ok){
+    msgEl.innerHTML = `<div class="badge-msg success">✓ Proposal '${name}' saved successfully!</div>`;
+    document.getElementById('ad-name').value = '';
+    document.getElementById('ad-desc').value = '';
+    document.getElementById('ad-budget').value = '';
+    updateLiveStatsAndTables();
+  } else {
+    msgEl.innerHTML = `<div class="badge-msg error">Failed to save proposal: ${res.error||''}</div>`;
+  }
+}
+
+async function handleAddVoter(){
+  const vid = document.getElementById('v-id').value.trim().toUpperCase();
+  const name = document.getElementById('v-name').value.trim();
+  const ward = document.getElementById('v-ward').value;
+  const msgEl = document.getElementById('voter-msg');
+
+  if(!vid || !name){
+    msgEl.innerHTML = `<div class="badge-msg error">Please provide Voter ID and Resident Name.</div>`;
+    return;
+  }
+
+  const res = await addSingleVoter(vid, name, ward);
+  if(res.ok){
+    msgEl.innerHTML = `<div class="badge-msg success">✓ Voter ${name} (${vid}) registered successfully!</div>`;
+    document.getElementById('v-id').value = '';
+    document.getElementById('v-name').value = '';
+    updateLiveStatsAndTables();
+  } else {
+    msgEl.innerHTML = `<div class="badge-msg error">Error: ${res.error}</div>`;
+  }
+}
+
+async function handleBulkFeed(){
+  const type = document.getElementById('bulk-type').value;
+  const fileInput = document.getElementById('bulk-file');
+  const textInput = document.getElementById('bulk-text').value.trim();
+  const msgEl = document.getElementById('bulk-msg');
+
+  let file = fileInput.files && fileInput.files[0];
+  if(!file && !textInput){
+    msgEl.innerHTML = `<div class="badge-msg error">Please choose an Excel/CSV file or paste text first.</div>`;
+    return;
+  }
+
+  msgEl.innerHTML = `<div class="badge-msg">Reading and feeding records into roll...</div>`;
+  const result = await bulkFeedData(type, file ? file : textInput, !!file);
+
+  if(result.ok){
+    let badge = result.added > 0 ? 'success' : 'badge-msg';
+    let extraErr = '';
+    if(result.errors && result.errors.length > 0 && result.added === 0 && result.skipped === 0){
+      badge = 'error';
+      extraErr = `<div style="margin-top:6px; font-size:0.75rem;">${result.errors.join('<br>')}</div>`;
+    }
+    msgEl.innerHTML = `<div class="badge-msg ${badge}">✓ ${result.message || 'Data fed successfully.'}${extraErr}</div>`;
+    fileInput.value = '';
+    document.getElementById('bulk-text').value = '';
+    await loadState();
+    updateLiveStatsAndTables();
+  } else {
+    msgEl.innerHTML = `<div class="badge-msg error">Error: ${result.error}</div>`;
+  }
+}
+
+async function handleAddWard(){
+  const wname = document.getElementById('w-name').value.trim();
+  const msgEl = document.getElementById('ward-msg');
+  if(!wname){
+    msgEl.innerHTML = `<div class="badge-msg error">Please enter a ward name.</div>`;
+    return;
+  }
+  await addWard(wname);
+  msgEl.innerHTML = `<div class="badge-msg success">✓ Ward '${wname}' added successfully.</div>`;
+  document.getElementById('w-name').value = '';
+  setTimeout(() => render(), 600);
+}
+
+async function handleGrievanceStatus(gid, newStatus){
+  await updateGrievanceStatus(gid, newStatus);
+  const grvList = document.getElementById('admin-grievances-list');
+  if(grvList) grvList.innerHTML = renderGrievanceCardsAdmin();
+}
+
+async function handleResetDb(){
+  if(confirm('Are you sure you want to reset to clean default seed data? All custom additions and test votes will be cleared.')){
+    await resetDbToCleanSeed();
+    alert('Database reset successfully.');
+    await render();
+  }
+}
+
+/* ---- assemble page ---- */
+async function render(){
+  const tagEl = document.getElementById('brand-tagline');
+  if(tagEl) tagEl.textContent = t('tagline');
+
+  const langEl = document.getElementById('header-lang');
+  if(langEl) langEl.innerHTML = renderLangSelector();
+
+  const modeRes = document.getElementById('mode-res-btn');
+  if(modeRes) modeRes.textContent = t('mode_resident');
+  const modeAdm = document.getElementById('mode-adm-btn');
+  if(modeAdm) modeAdm.textContent = t('mode_admin');
+
+  const resetBtn = document.getElementById('reset-db-label');
+  if(resetBtn) resetBtn.textContent = t('reset_db_btn');
+
+  renderSessionChip();
+  document.getElementById('sync-note').innerHTML = renderSyncNote();
+  const app = document.getElementById('app');
+  app.className = 'view-container';
+  if(!adminSession){ app.innerHTML = renderAdminLogin(); return; }
+  app.innerHTML = renderAdminConsole();
+  const ledgerEl = document.getElementById('admin-ledger');
+  if(ledgerEl){
+    ledgerEl.innerHTML = await renderLedgerPanel(null);
+  }
+}
+
+// Initial load
+(async function init(){
+  await loadState();
+  await render();
+  subscribeToUpdates(updateLiveStatsAndTables);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ward Ledger — Resident Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="seal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="1.6"><path d="M12 2 3 7v2h18V7z"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8"/><path d="M3 21h18"/></svg>
+    </div>
+    <div>
+      <h1><a href="index.html" style="color:inherit; text-decoration:none;">Ward Ledger</a></h1>
+      <div class="tagline" id="brand-tagline">Participatory municipal budgeting</div>
+    </div>
+  </div>
+  <div class="top-controls">
+    <div id="header-lang"></div>
+    <div class="mode-switch" role="tablist" aria-label="Switch view">
+      <button type="button" id="mode-res-btn" class="active">Resident</button>
+      <button type="button" id="mode-adm-btn" onclick="switchMode('admin.html')">Admin</button>
+    </div>
+  </div>
+  <div class="session-chip" id="session-chip"></div>
+</header>
+
+<div class="sync-note" id="sync-note"></div>
+
+<main id="app" class="view-container"></main>
+
+<footer>Vote records are chained with SHA-256 hashes in SQLite (ward_ledger.db). Data is live-synced with the Admin portal.</footer>
+
+<script src="shared.js"></script>
+<script>
+let session = null; // {name, voterId, ward}
+try {
+  const saved = sessionStorage.getItem('residentSession');
+  if(saved) session = JSON.parse(saved);
+} catch(e){}
+
+let selectedWard = WARDS[0];
+let activeGrievanceType = 'suggestion';
+let isGrievanceBoxOpen = false;
+
+function switchMode(url){
+  if(url.includes('admin')){
+    document.getElementById('mode-adm-btn')?.classList.add('active');
+    document.getElementById('mode-res-btn')?.classList.remove('active');
+  } else {
+    document.getElementById('mode-res-btn')?.classList.add('active');
+    document.getElementById('mode-adm-btn')?.classList.remove('active');
+  }
+  const app = document.getElementById('app');
+  if(app){
+    app.classList.remove('view-container');
+    app.classList.add('view-fade-out');
+  }
+  setTimeout(() => { window.location.href = url; }, 140);
+}
+
+function renderSessionChip(){
+  const el = document.getElementById('session-chip');
+  if(!el) return;
+  el.innerHTML = session
+    ? `<span class="dot"></span> ${session.name} · ${shortWard(session.ward)} <button onclick="logout()">${t('sign_out')}</button>`
+    : '';
+}
+
+function logout(){
+  session = null;
+  try { sessionStorage.removeItem('residentSession'); } catch(e){}
+  render();
+}
+
+/* ---- login ---- */
+function renderResidentLogin(){
+  return `
+  <div class="login-wrap">
+    <div class="login-card">
+      <h2>${t('res_login_title')}</h2>
+      <p class="sub">${t('res_login_sub')}</p>
+      <label for="in-vid">${t('voter_id_label')}</label>
+      <input type="text" id="in-vid" placeholder="e.g. TN-0119284" onkeydown="if(event.key==='Enter')residentLogin()">
+      <button class="btn-primary" onclick="residentLogin()">${t('verify_enter')}</button>
+      <div id="login-error"></div>
+      <div class="login-note">
+        ${t('demo_id_note')}<br>
+        <b>${t('sample_ids')}:</b><br>
+        • Ward 1: <code>TN-0119284</code>, <code>TN-0880001</code><br>
+        • Ward 2: <code>TN-0223391</code>, <code>TN-0880002</code><br>
+        • Ward 3: <code>TN-0337712</code>, <code>TN-0880003</code><br>
+        • Ward 4: <code>TN-0448827</code>, <code>TN-9949</code>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function residentLogin(){
+  const voterId = document.getElementById('in-vid').value.trim().toUpperCase();
+  const errEl = document.getElementById('login-error');
+
+  if(!voterId){
+    errEl.innerHTML = `<div class="login-note" style="color:var(--danger); margin-top:-8px;">Please enter a Voter ID.</div>`;
+    return;
+  }
+
+  // Try API first if connected
+  if(isDbConnected){
+    try{
+      const res = await fetch(`${API_URL}/api/auth/voter`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({voterId})
+      });
+      const data = await res.json();
+      if(res.ok && data.ok){
+        session = {
+          name: data.voter.name,
+          voterId: data.voter.voterId,
+          ward: normalizeWard(data.voter.ward)
+        };
+        selectedWard = session.ward;
+        try { sessionStorage.setItem('residentSession', JSON.stringify(session)); } catch(e){}
+        if(data.alreadyVoted){
+          errEl.innerHTML = `<div class="login-note" style="color:var(--gold-soft); margin-top:-8px;">This voter ID has already cast its vote. Signing in for viewing only.</div>`;
+        }
+        await render();
+        return;
+      }
+    }catch(e){}
+  }
+
+  // Fallback to local roll (Client-side / GitHub Pages mode)
+  let foundKey = Object.keys(VOTER_ROLL).find(k => k.trim().toUpperCase() === voterId);
+  const record = foundKey ? VOTER_ROLL[foundKey] : null;
+
+  if(!record){
+    errEl.innerHTML = `<div class="login-note" style="color:var(--danger); margin-top:-8px;">Voter ID '${voterId}' not found on any ward roll. Check the ID and try again.</div>`;
+    return;
+  }
+
+  const normWard = normalizeWard(record.ward);
+  session = { name: record.name, voterId: foundKey, ward: normWard };
+  selectedWard = normWard;
+  try { sessionStorage.setItem('residentSession', JSON.stringify(session)); } catch(e){}
+
+  if(votedVoters.has(foundKey)){
+    errEl.innerHTML = `<div class="login-note" style="color:var(--gold-soft); margin-top:-8px;">This voter ID has already cast its vote. Signing in for viewing only.</div>`;
+  }
+  await render();
+}
+
+/* ---- ward rail + ballots ---- */
+function renderWardRail(){
+  return `
+  <div class="ward-rail">
+    <div class="rail-label">${t('wards_title')}</div>
+    ${WARDS.map(w=>{
+      const isSelected = normalizeWard(w) === normalizeWard(selectedWard);
+      const isHome = session && normalizeWard(w) === normalizeWard(session.ward);
+      return `
+        <button class="ward-btn ${isSelected?'active':''}" onclick="selectWard('${w.replace(/'/g,"\\'")}')">
+          <span>${w}</span>
+          ${isHome ? `<span class="home-tag">${t('your_ward')}</span>` : ''}
+        </button>`;
+    }).join('')}
+  </div>`;
+}
+
+function selectWard(w){
+  selectedWard = normalizeWard(w);
+  render();
+}
+
+function renderBallots(){
+  const list = proposalsByWard(selectedWard);
+  const isMyWard = session && normalizeWard(selectedWard) === normalizeWard(session.ward);
+  const alreadyVoted = session && votedVoters.has(session.voterId);
+
+  if(list.length === 0){
+    return `<div class="empty">${t('no_proposals')}</div>`;
+  }
+
+  return list.map(p=>{
+    const votes = votesFor(p.id);
+    let btn;
+    if(!isMyWard){
+      btn = `<button class="vote-btn" disabled>${t('outside_ward')}</button>`;
+    } else if(alreadyVoted){
+      const myVote = voteLog.find(v => v.voterId === session.voterId && Number(v.proposalId) === Number(p.id));
+      btn = myVote ? `<button class="vote-btn voted" disabled>${t('your_vote')}</button>` : `<button class="vote-btn" disabled>${t('vote_cast')}</button>`;
+    } else {
+      btn = `<button class="vote-btn" onclick="handleVote(${p.id})">${t('cast_vote')}</button>`;
+    }
+    return `
+    <div class="ballot">
+      <div class="info">
+        <h3>${p.name}</h3>
+        <p>${p.desc}</p>
+        <div class="figures">
+          <div><b>${inr(p.budget)}</b><span>${t('estimated_budget')}</span></div>
+        </div>
+      </div>
+      <div class="vote-col">
+        ${btn}
+        <div class="vote-count">${votes} ${votes===1?t('proposal_single'):t('proposals_count')}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function handleVote(proposalId){
+  const res = await castVote(proposalId, session);
+  if(!res.ok){
+    alert(res.error || 'Failed to record vote.');
+  }
+  await render();
+}
+
+/* ---- Compact Grievance & Suggestion Box Widget ---- */
+function renderGrievanceBox(){
+  const wardGrievances = grievances.filter(g => normalizeWard(g.ward) === normalizeWard(selectedWard));
+  const recentItems = wardGrievances.slice(0, 3).map(g => {
+    let statusClass = 'pending';
+    let statusLabel = t('status_pending');
+    if(g.status === 'Under Review'){ statusClass = 'review'; statusLabel = t('status_review'); }
+    else if(g.status === 'Resolved'){ statusClass = 'resolved'; statusLabel = t('status_resolved'); }
+    
+    let icon = '💡';
+    if(g.type === 'complaint') icon = '⚠️';
+    else if(g.type === 'budget_idea') icon = '🏗️';
+
+    return `
+    <div class="grievance-item">
+      <div class="top-line">
+        <span style="font-weight:600; font-size:0.85rem; color:var(--text);">${icon} ${g.subject}</span>
+        <span class="badge-status ${statusClass}">${statusLabel}</span>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-dim); margin:0 0 6px;">${g.details}</p>
+      <div style="font-size:0.72rem; color:var(--text-faint); display:flex; justify-content:space-between;">
+        <span>${t('tracking_token')}: <b>${g.id}</b> · ${g.name || 'Resident'}</span>
+        <span>${new Date(g.created_at).toLocaleDateString()}</span>
+      </div>
+    </div>`;
+  }).join('') || `<div style="font-size:0.8rem; color:var(--text-faint);">${t('no_grievances_yet')}</div>`;
+
+  return `
+  <div class="grievance-panel">
+    <div class="grievance-header" onclick="toggleGrievanceBox()">
+      <h3>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--gold);"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        ${t('grievance_box_title')}
+      </h3>
+      <button type="button" class="toggle-btn">${isGrievanceBoxOpen ? '− ' + (currentLang==='ta'?'மறை':'Hide') : '+ ' + (currentLang==='ta'?'புதிய பதிவு':'Submit / View')}</button>
+    </div>
+
+    ${isGrievanceBoxOpen ? `
+    <div class="grievance-body">
+      <p style="font-size:0.84rem; color:var(--text-dim); margin:0 0 12px;">${t('grievance_box_sub')}</p>
+      
+      <div class="chip-group">
+        <button type="button" class="chip-btn ${activeGrievanceType==='suggestion'?'active':''}" onclick="setGrievanceType('suggestion')">${t('type_suggestion')}</button>
+        <button type="button" class="chip-btn ${activeGrievanceType==='complaint'?'active':''}" onclick="setGrievanceType('complaint')">${t('type_complaint')}</button>
+        <button type="button" class="chip-btn ${activeGrievanceType==='budget_idea'?'active':''}" onclick="setGrievanceType('budget_idea')">${t('type_budget_idea')}</button>
+      </div>
+
+      <label for="grv-subject">${t('subject_label')}</label>
+      <input type="text" id="grv-subject" placeholder="e.g. Repair pedestrian crossing / Add tree saplings" style="margin-bottom:10px;">
+
+      <label for="grv-details">${t('details_label')}</label>
+      <textarea id="grv-details" placeholder="Explain the problem or proposal details..." style="min-height:70px; margin-bottom:12px;"></textarea>
+
+      <button type="button" class="btn-primary" style="padding:10px;" onclick="handleGrievanceSubmit()">${t('submit_grievance')}</button>
+      <div id="grv-msg"></div>
+
+      <div style="margin-top:20px;">
+        <h4 style="font-size:0.85rem; color:var(--text-dim); margin-bottom:10px; font-family:'IBM Plex Sans';">${t('your_submissions')} (${selectedWard})</h4>
+        ${recentItems}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+function toggleGrievanceBox(){
+  isGrievanceBoxOpen = !isGrievanceBoxOpen;
+  render();
+}
+
+function setGrievanceType(type){
+  activeGrievanceType = type;
+  document.querySelectorAll('.chip-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.includes(t('type_' + type).split(' ')[1] || type));
+  });
+}
+
+async function handleGrievanceSubmit(){
+  const subject = document.getElementById('grv-subject').value.trim();
+  const details = document.getElementById('grv-details').value.trim();
+  const msgEl = document.getElementById('grv-msg');
+
+  if(!subject || !details){
+    msgEl.innerHTML = `<div class="badge-msg error">Please enter both a summary and details.</div>`;
+    return;
+  }
+
+  const res = await submitGrievance(
+    activeGrievanceType,
+    session ? session.voterId : null,
+    session ? session.name : 'Ward Resident',
+    session ? session.ward : selectedWard,
+    subject,
+    details
+  );
+
+  if(res.ok){
+    msgEl.innerHTML = `<div class="badge-msg success">✓ Submitted successfully! Tracking Token: <b>${res.grievance.id}</b></div>`;
+    document.getElementById('grv-subject').value = '';
+    document.getElementById('grv-details').value = '';
+    setTimeout(() => render(), 1200);
+  } else {
+    msgEl.innerHTML = `<div class="badge-msg error">Failed to submit grievance.</div>`;
+  }
+}
+
+/* ---- assemble page ---- */
+async function render(){
+  // Update header elements
+  const tagEl = document.getElementById('brand-tagline');
+  if(tagEl) tagEl.textContent = t('tagline');
+
+  const langEl = document.getElementById('header-lang');
+  if(langEl) langEl.innerHTML = renderLangSelector();
+
+  const modeRes = document.getElementById('mode-res-btn');
+  if(modeRes) modeRes.textContent = t('mode_resident');
+  const modeAdm = document.getElementById('mode-adm-btn');
+  if(modeAdm) modeAdm.textContent = t('mode_admin');
+
+  renderSessionChip();
+  document.getElementById('sync-note').innerHTML = renderSyncNote();
+  const app = document.getElementById('app');
+  app.className = 'view-container';
+  if(!session){ app.innerHTML = renderResidentLogin(); return; }
+
+  app.innerHTML = `
+  <div class="grid">
+    ${renderWardRail()}
+    <div>
+      <section class="col-title">
+        <h2>${selectedWard}</h2>
+        <span class="meta">${proposalsByWard(selectedWard).length} ${proposalsByWard(selectedWard).length===1?t('proposal_single'):t('proposals_count')}</span>
+      </section>
+      ${renderBallots()}
+      
+      <!-- Compact Complaint & Suggestion Box -->
+      ${renderGrievanceBox()}
+
+      <section class="col-title" style="margin-top:28px;">
+        <h2>${t('live_results')}</h2>
+        <span class="meta">${t('live_results_sub')}</span>
+      </section>
+      ${renderResultsForWard(selectedWard)}
+      <div id="resident-ledger" style="margin-top:28px;"></div>
+    </div>
+  </div>`;
+
+  const ledgerEl = document.getElementById('resident-ledger');
+  if(ledgerEl){
+    ledgerEl.innerHTML = await renderLedgerPanel(session.ward);
+  }
+}
+
+// Initial load
+(async function init(){
+  await loadState();
+  if(session && session.ward) selectedWard = normalizeWard(session.ward);
+  await render();
+  subscribeToUpdates(render);
+})();
+</script>
+</body>
+</html>
