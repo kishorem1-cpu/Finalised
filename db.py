@@ -27,90 +27,177 @@ DEFAULT_ADMINS = [
 ]
 
 DEFAULT_VOTERS = [
+    # Ward 1 — Anna Nagar
     {"voter_id": "TN-0119284", "name": "Priya Raman", "ward": "Ward 1 — Anna Nagar"},
+    {"voter_id": "TN-0880001", "name": "Kavya Sundaram", "ward": "Ward 1 — Anna Nagar"},
     {"voter_id": "TN-0119285", "name": "Arjun Suresh", "ward": "Ward 1 — Anna Nagar"},
     {"voter_id": "TN-0119286", "name": "Kavitha Nair", "ward": "Ward 1 — Anna Nagar"},
     {"voter_id": "TN-0119287", "name": "Deepak Iyer", "ward": "Ward 1 — Anna Nagar"},
     {"voter_id": "TN-0119288", "name": "Meena Krishnan", "ward": "Ward 1 — Anna Nagar"},
+    {"voter_id": "TN-1234",    "name": "Raja Sekhar", "ward": "Ward 1 — Anna Nagar"},
+    {"voter_id": "TN-0119289", "name": "Sanjay Anand", "ward": "Ward 1 — Anna Nagar"},
+    {"voter_id": "TN-0119290", "name": "Uma Maheswari", "ward": "Ward 1 — Anna Nagar"},
+    {"voter_id": "TN-0119291", "name": "Balaji Swaminathan", "ward": "Ward 1 — Anna Nagar"},
+
+    # Ward 2 — T Nagar
     {"voter_id": "TN-0223391", "name": "Rahul Verma", "ward": "Ward 2 — T Nagar"},
+    {"voter_id": "TN-0880002", "name": "Rohan Mukherjee", "ward": "Ward 2 — T Nagar"},
     {"voter_id": "TN-0223392", "name": "Sowmya Rangan", "ward": "Ward 2 — T Nagar"},
     {"voter_id": "TN-0223393", "name": "Vignesh Kumar", "ward": "Ward 2 — T Nagar"},
     {"voter_id": "TN-0223394", "name": "Anitha Bose", "ward": "Ward 2 — T Nagar"},
     {"voter_id": "TN-0223395", "name": "Karthik Subramaniam", "ward": "Ward 2 — T Nagar"},
+    {"voter_id": "TN-0223396", "name": "Harini Parthasarathy", "ward": "Ward 2 — T Nagar"},
+    {"voter_id": "TN-0223397", "name": "Vijay Krishnan", "ward": "Ward 2 — T Nagar"},
+    {"voter_id": "TN-0223398", "name": "Geetha Narayanan", "ward": "Ward 2 — T Nagar"},
+    {"voter_id": "TN-0223399", "name": "Abishek Chawla", "ward": "Ward 2 — T Nagar"},
+
+    # Ward 3 — Adyar
     {"voter_id": "TN-0337712", "name": "Lakshmi Venkatesh", "ward": "Ward 3 — Adyar"},
+    {"voter_id": "TN-0880003", "name": "Shalini Narayanan", "ward": "Ward 3 — Adyar"},
     {"voter_id": "TN-0337713", "name": "Suresh Pillai", "ward": "Ward 3 — Adyar"},
     {"voter_id": "TN-0337714", "name": "Divya Shankar", "ward": "Ward 3 — Adyar"},
     {"voter_id": "TN-0337715", "name": "Naveen Raj", "ward": "Ward 3 — Adyar"},
     {"voter_id": "TN-0337716", "name": "Bhavani Murthy", "ward": "Ward 3 — Adyar"},
+    {"voter_id": "TN-0337717", "name": "Goutham Ramachandran", "ward": "Ward 3 — Adyar"},
+    {"voter_id": "TN-0337718", "name": "Shruti Padmanabhan", "ward": "Ward 3 — Adyar"},
+    {"voter_id": "TN-0337719", "name": "Aditya Menon", "ward": "Ward 3 — Adyar"},
+    {"voter_id": "TN-0337720", "name": "Varsha Srinivasan", "ward": "Ward 3 — Adyar"},
+
+    # Ward 4 — Mylapore
     {"voter_id": "TN-0448827", "name": "Ganesh Babu", "ward": "Ward 4 — Mylapore"},
+    {"voter_id": "TN-9949",    "name": "Kaviya Sundar", "ward": "Ward 4 — Mylapore"},
+    {"voter_id": "TN-2404",    "name": "Rency Mary", "ward": "Ward 4 — Mylapore"},
     {"voter_id": "TN-0448828", "name": "Revathi Chandran", "ward": "Ward 4 — Mylapore"},
     {"voter_id": "TN-0448829", "name": "Manoj Sekar", "ward": "Ward 4 — Mylapore"},
     {"voter_id": "TN-0448830", "name": "Swathi Ravi", "ward": "Ward 4 — Mylapore"},
     {"voter_id": "TN-0448831", "name": "Vinoth Kannan", "ward": "Ward 4 — Mylapore"},
-    {"voter_id": "TN-0880001", "name": "Kavya Sundaram", "ward": "Ward 1 — Anna Nagar"},
-    {"voter_id": "TN-0880002", "name": "Rohan Mukherjee", "ward": "Ward 2 — T Nagar"},
-    {"voter_id": "TN-0880003", "name": "Shalini Narayanan", "ward": "Ward 3 — Adyar"},
-    {"voter_id": "TN-9949", "name": "Kaviya", "ward": "Ward 4 — Mylapore"}
+    {"voter_id": "TN-0448832", "name": "Jayashree Raghavan", "ward": "Ward 4 — Mylapore"},
+    {"voter_id": "TN-0448833", "name": "Santhosh Kumar", "ward": "Ward 4 — Mylapore"},
+    {"voter_id": "TN-0448834", "name": "Deepa Rangarajan", "ward": "Ward 4 — Mylapore"}
 ]
 
 DEFAULT_PROPOSALS = [
+    # Ward 1 — Anna Nagar
     {
         "id": 1,
         "ward": "Ward 1 — Anna Nagar",
-        "name": "Anna Park Renovation",
-        "desc": "Resurface walking paths, repair fencing and add shaded seating in the community park.",
-        "budget": 1200000
+        "name": "Anna Park Eco-Renovation & Jogging Track",
+        "desc": "Resurface 1.2km walking paths with porous eco-tiles, install solar LED pathway lights, and add shaded benches.",
+        "budget": 1450000
     },
     {
         "id": 2,
         "ward": "Ward 1 — Anna Nagar",
-        "name": "Street Light Upgrade",
-        "desc": "Replace 40 sodium-vapour lamps along the ward's residential lanes with LED fixtures.",
-        "budget": 850000
+        "name": "Smart LED Streetlight Transition (Phase 2)",
+        "desc": "Replace 65 legacy sodium lamps with energy-efficient smart LED luminaires along residential 2nd & 3rd Avenues.",
+        "budget": 880000
     },
     {
         "id": 3,
-        "ward": "Ward 2 — T Nagar",
-        "name": "Main Road Repair",
-        "desc": "Pothole repair and resurfacing of the 2km arterial stretch through the ward market.",
-        "budget": 1500000
+        "ward": "Ward 1 — Anna Nagar",
+        "name": "Rainwater Harvesting & Storm Drain Desilting",
+        "desc": "Deep desilting of arterial stormwater conduits and installation of 8 percolation filtration chambers before monsoon.",
+        "budget": 1120000
     },
     {
         "id": 4,
-        "ward": "Ward 2 — T Nagar",
-        "name": "Public Toilet Block",
-        "desc": "Construct a new accessible public toilet block near the bus terminus.",
-        "budget": 600000
+        "ward": "Ward 1 — Anna Nagar",
+        "name": "Automated Solid Waste Compactor Station",
+        "desc": "Deploy modern odor-free closed hydraulic refuse compactor on 6th Main Road for hygienic waste processing.",
+        "budget": 1600000
     },
+
+    # Ward 2 — T Nagar
     {
         "id": 5,
-        "ward": "Ward 3 — Adyar",
-        "name": "Solar Pathway Lighting",
-        "desc": "Install 30 solar-powered LED lights along the Adyar riverfront path.",
-        "budget": 950000
+        "ward": "Ward 2 — T Nagar",
+        "name": "Pedestrian Plaza Expansion & Pavement Upgrades",
+        "desc": "Extend accessible bollard-protected tactile walkways, anti-skid paver tiles, and ornamental planters along Pondy Bazaar corridor.",
+        "budget": 1850000
     },
     {
         "id": 6,
-        "ward": "Ward 3 — Adyar",
-        "name": "Rainwater Recharge Wells",
-        "desc": "Construct 6 community rainwater percolation wells to elevate the water table.",
-        "budget": 720000
+        "ward": "Ward 2 — T Nagar",
+        "name": "Automated Two-Wheeler Parking Facility",
+        "desc": "Construct a 40-slot automated stacked bike parking hub near Usman Road junction to eliminate sidewalk congestion.",
+        "budget": 2200000
     },
     {
         "id": 7,
-        "ward": "Ward 4 — Mylapore",
-        "name": "Heritage Walkway Restoration",
-        "desc": "Repair traditional cobblestones and install visitor directionals around the temple circle.",
-        "budget": 1100000
+        "ward": "Ward 2 — T Nagar",
+        "name": "Modern Public Sanitation & Hygiene Complex",
+        "desc": "Construct a 24x7 accessible public toilet with touchless sensor fittings and dedicated child/elderly care stalls.",
+        "budget": 750000
     },
     {
         "id": 8,
+        "ward": "Ward 2 — T Nagar",
+        "name": "Overhead Cable Trenching & Underground Ducting",
+        "desc": "Relocate haphazard overhead optical fiber cables into underground micro-ducts along Ranganathan Street cross-lanes.",
+        "budget": 1380000
+    },
+
+    # Ward 3 — Adyar
+    {
+        "id": 9,
+        "ward": "Ward 3 — Adyar",
+        "name": "Adyar Riverfront Green Corridor & Solar Lighting",
+        "desc": "Install 45 standalone solar luminary poles and native avenue trees along the riverside pedestrian walkway.",
+        "budget": 1250000
+    },
+    {
+        "id": 10,
+        "ward": "Ward 3 — Adyar",
+        "name": "Aquifer Percolation Recharge Wells",
+        "desc": "Construct 10 decentralized stormwater percolation recharge wells in low-lying residential sectors to prevent seasonal waterlogging.",
+        "budget": 920000
+    },
+    {
+        "id": 11,
+        "ward": "Ward 3 — Adyar",
+        "name": "Elderly Wellness Park & Outdoor Open-Air Gym",
+        "desc": "Establish an outdoor rehabilitation gym with low-impact equipment, acupressure walking track, and first-aid kiosk.",
+        "budget": 680000
+    },
+    {
+        "id": 12,
+        "ward": "Ward 3 — Adyar",
+        "name": "Community Aerobic Composting & Biogas Unit",
+        "desc": "Set up an aerobic community composting facility at Gandhi Nagar for local organic wet waste conversion.",
+        "budget": 840000
+    },
+
+    # Ward 4 — Mylapore
+    {
+        "id": 13,
         "ward": "Ward 4 — Mylapore",
-        "name": "Stormwater Culvert Desilting",
-        "desc": "Deep desilting and reinforced grating for flood prevention in residential streets.",
-        "budget": 820000
+        "name": "Heritage Temple Tank Restoration & Embankment Repair",
+        "desc": "Restore historic stone embankments, install aeration water fountains, and desilt peripheral catchment feeders.",
+        "budget": 1900000
+    },
+    {
+        "id": 14,
+        "ward": "Ward 4 — Mylapore",
+        "name": "Traffic Calming & Heritage Lane Signage",
+        "desc": "Install rubberized modular speed tables, retro-reflective heritage street signage, and bollards around temple squares.",
+        "budget": 550000
+    },
+    {
+        "id": 15,
+        "ward": "Ward 4 — Mylapore",
+        "name": "Secondary Drainage Pipeline & Stormwater Interceptor",
+        "desc": "Lay 800m high-density polyethylene pipeline to divert excess rainwater into temple tank reservoirs.",
+        "budget": 1520000
+    },
+    {
+        "id": 16,
+        "ward": "Ward 4 — Mylapore",
+        "name": "Solar-Powered E-Library & Digital Study Centre",
+        "desc": "Modernize the municipal reading room with 15 digital learning tablets, high-speed Wi-Fi, and 5kW rooftop solar panels.",
+        "budget": 1050000
     }
 ]
+
 
 DEFAULT_GRIEVANCES = [
     {
