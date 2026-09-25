@@ -448,13 +448,23 @@ let grievances = [
   }
 ];
 
+// Online backend configuration:
+// 1. window.WARD_LEDGER_API_URL if defined in index.html/config
+// 2. Saved in localStorage ('ward_ledger_api_url')
+// 3. Current host if served by Flask (Render, Railway, VPS, etc.)
+// 4. http://127.0.0.1:5000 for local file/dev preview
 let API_URL = '';
 if (typeof window !== 'undefined') {
-  if (window.location.protocol === 'file:') {
+  const configuredUrl = window.WARD_LEDGER_API_URL || localStorage.getItem('ward_ledger_api_url');
+  if (configuredUrl) {
+    API_URL = configuredUrl.replace(/\/+$/, '');
+  } else if (window.location.protocol === 'file:') {
     API_URL = 'http://127.0.0.1:5000';
-  } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    API_URL = (window.location.port === '5000') ? '' : 'http://127.0.0.1:5000';
+  } else if (window.location.hostname.endsWith('github.io')) {
+    // If hosted on GitHub Pages, use configured remote backend if set, else empty
+    API_URL = '';
   } else {
+    // Hosted on Flask directly (Render, Railway, PythonAnywhere, localhost)
     API_URL = '';
   }
 }
@@ -465,10 +475,13 @@ const STORAGE_KEY = 'wardLedgerState_v3';
 /* ---------------- synchronization & persistence ---------------- */
 
 async function loadState(){
-  if(API_URL !== '' || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')){
+  // Connect to backend whenever an API_URL is set, or when served by a web server (same origin), or localhost
+  const shouldTryBackend = (API_URL !== '') || (typeof window !== 'undefined' && window.location.protocol.startsWith('http') && !window.location.hostname.endsWith('github.io'));
+
+  if(shouldTryBackend){
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1800);
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s to allow cloud wake-up
       const res = await fetch(`${API_URL}/api/bootstrap`, { cache: 'no-store', signal: controller.signal });
       clearTimeout(timeoutId);
       if(res.ok){
